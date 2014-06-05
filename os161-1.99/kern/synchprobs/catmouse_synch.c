@@ -117,7 +117,6 @@ cat_before_eating(unsigned int bowl)
     num_cats_waiting++;
     V(cat_mutex_w);
     lock_acquire(bowl_locks[bowl-1]);
-    
     kprintf("cat lock acquired for bowl %d\n", bowl);
     while(whos_eating == true || num_mice_eating > 0) {
         kprintf("mice are eating... gotta wait\n");
@@ -189,6 +188,11 @@ mouse_before_eating(unsigned int bowl)
     kprintf("mouse acquiring lock for bowl %d\n", bowl);
     lock_acquire(bowl_locks[bowl-1]);
     kprintf("mouse lock acquired for bowl %d\n", bowl);
+    if(num_cats_eating == 0 && num_cats_waiting == 0) {
+        P(whos_mutex);
+        whos_eating = true;
+        V(whos_mutex);
+    }
 
     while((whos_eating == false || num_cats_eating > 0)) {
         kprintf("cats are eating... gotta wait\n");
