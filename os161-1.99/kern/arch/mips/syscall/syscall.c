@@ -32,9 +32,13 @@
 #include <kern/syscall.h>
 #include <lib.h>
 #include <mips/trapframe.h>
+#include <addrspace.h>
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
+#include <proc.h>
+#include <synch.h>
+#include "opt-A2.h"
 
 
 /*
@@ -75,6 +79,9 @@
  * stack, starting at sp+16 to skip over the slots for the
  * registerized values, with copyin().
  */
+
+extern struct proc **proc_list;
+
 void
 syscall(struct trapframe *tf)
 {
@@ -130,7 +137,9 @@ syscall(struct trapframe *tf)
 			    (pid_t *)&retval);
 	  break;
 #endif // UW
-
+    case SYS_fork:
+            err = sys_fork(tf,(pid_t *)&retval);
+        break;
 	    /* Add stuff here */
  
 	default:
@@ -179,5 +188,14 @@ syscall(struct trapframe *tf)
 void
 enter_forked_process(struct trapframe *tf)
 {
-	(void)tf;
+#if OPT_A2
+    struct trapframe *p_ntf = kmalloc(sizeof(struct trapframe *));
+    memcpy(p_ntf, tf, sizeof(struct trapframe *));
+    struct trapframe ntf = *p_ntf;
+    tf->tf_v0 = 0;
+    tf->tf_a3 = 0;
+    tf->tf_epc += 4;
+    V(proc_list[curproc->parent_pid]->fork_mutex);
+    mips_usermode(&ntf);
+#endif
 }

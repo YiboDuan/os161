@@ -8,10 +8,14 @@
 #include <proc.h>
 #include <thread.h>
 #include <addrspace.h>
+#include <synch.h>
 #include <copyinout.h>
+#include <mips/trapframe.h>
 
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
+
+extern struct proc **proc_list;
 
 void sys__exit(int exitcode) {
 
@@ -92,3 +96,43 @@ sys_waitpid(pid_t pid,
   return(0);
 }
 
+int
+sys_fork(struct trapframe *tf, pid_t *retval) {
+    int err;
+    
+    //create new process
+    struct proc *new_proc = proc_create_runprogram(curproc->p_name);
+    new_proc->parent_pid = curproc->pid;
+    
+    // create and copy new address space
+    struct addrspace *nas;
+    err = as_copy(curproc_getas(),&nas);
+    if (err) {
+        proc_destroy(new_proc);
+        return err;
+    }
+    
+    // create and copy new trap frame
+    struct trapframe *ntf = kmalloc(sizeof(struct trapframe*));
+    if(ntf == NULL) {
+        proc_destroy(new_proc);
+        kfree(nas);
+        return ENOMEM;
+    }
+    memcpy(ntf,tf,sizeof(struct trapframe*));
+    
+    void (*entry_func)(void*, unsigned long) = &child_entry;
+
+    err = thread_fork("child thread", new_proc, entry_func, ntf, (unsigned long) nas);
+    *retval = new_proc->pid;
+    P(curproc->fork_mutex);
+    
+    return 0;
+}
+
+void
+child_entry(void* arg1, unsigned long arg2) {
+    curproc->p_addrspace = (struct addrspace *)arg2;
+    as_activate();
+    enter_forked_process(arg1);
+}

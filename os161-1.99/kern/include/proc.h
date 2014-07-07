@@ -39,6 +39,8 @@
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
 
+#define INITIAL_PROC_LIST_SIZE 128
+
 struct addrspace;
 struct vnode;
 #ifdef UW
@@ -67,10 +69,21 @@ struct proc {
      it has opened, not just the console. */
   struct vnode *console;                /* a vnode for the console device */
 #endif
-
-	/* add more material here as needed */
+    struct cv *waitcv;
+    struct semaphore *fork_mutex;
+    pid_t pid;
+    pid_t parent_pid;
+    int exitcode;
+    bool exited;
 };
 
+struct index_ll {
+    int index;
+    struct index_ll *next;
+};
+
+extern struct proc **proc_list;
+extern volatile int proc_list_end;
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;
 
@@ -84,6 +97,9 @@ void proc_bootstrap(void);
 
 /* Create a fresh process for use by runprogram(). */
 struct proc *proc_create_runprogram(const char *name);
+
+/* Add a process to the proc_list */
+void proc_addtolist(struct proc *proc);
 
 /* Destroy a process. */
 void proc_destroy(struct proc *proc);

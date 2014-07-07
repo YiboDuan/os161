@@ -343,6 +343,7 @@ mips_trap(struct trapframe *tf)
 	 * kernel will (most likely) hang the system, so it's better
 	 * to find out now.
 	 */
+    
 	KASSERT(SAME_STACK(cpustacks[curcpu->c_number]-1, (vaddr_t)tf));
 }
 
@@ -394,7 +395,7 @@ mips_usermode(struct trapframe *tf)
 	 * either another thread's stack or in the kernel heap.
 	 * (Exercise: why?)
 	 */
-	KASSERT(SAME_STACK(cpustacks[curcpu->c_number]-1, (vaddr_t)tf));
+    	KASSERT(SAME_STACK(cpustacks[curcpu->c_number]-1, (vaddr_t)tf));
 
 	/*
 	 * This actually does it. See exception.S.
