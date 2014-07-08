@@ -68,12 +68,13 @@ static unsigned int proc_count;
 /* it would be better to use a lock here, but we use a semaphore because locks are not implemented in the base kernel */ 
 static struct semaphore *proc_count_mutex;
 /* used to signal the kernel menu thread when there are no processes */
-struct semaphore *no_proc_sem;   
+struct semaphore *no_proc_sem;
 #endif  // UW
 
 #if OPT_A2
-static struct lock *proc_list_mutex;
+static struct semaphore *proc_list_mutex;
 struct proc **proc_list;
+struct semaphore *fork_synch;
 #endif
 
 /*
@@ -173,7 +174,7 @@ proc_destroy(struct proc *proc)
 	
 #if OPT_A2
     kprintf("destruction");
-    lock_acquire(proc_list_mutex);
+    P(proc_list_mutex);
     if(proc->parent_pid == 1 || proc_list[proc->parent_pid]->exited){
         proc_list[proc->pid] = NULL;
         kfree(proc->p_name);
@@ -183,7 +184,7 @@ proc_destroy(struct proc *proc)
         proc->exited = true;
         //cv_broadcast(proc->waitcv, NULL);
     }
-    lock_release(proc_list_mutex);
+    V(proc_list_mutex);
 #else
     kfree(proc->p_name);
 	kfree(proc);
@@ -233,7 +234,9 @@ proc_bootstrap(void)
 #if OPT_A2
     proc_list = kmalloc(INITIAL_PROC_LIST_SIZE*sizeof(struct proc *));
     proc_list[1] = kproc;
-    proc_list_mutex = lock_create("proc_list_mutex");
+    kproc->pid = 1;
+    proc_list_mutex = sem_create("proc_list_mutex",1);
+    fork_synch = sem_create("fork synch", 0);
 #endif
 }
 
@@ -303,10 +306,9 @@ proc_create_runprogram(const char *name)
     proc->exitcode = -1;
     proc->exited = false;
     proc->waitcv = cv_create("wait cv");
-    proc->fork_mutex = sem_create("fork mutex", 0);
-    lock_acquire(proc_list_mutex);
+    P(proc_list_mutex);
     proc_addtolist(proc);
-    lock_release(proc_list_mutex);
+    V(proc_list_mutex);
 
     
 #endif
@@ -317,12 +319,14 @@ proc_create_runprogram(const char *name)
 #if OPT_A2
 void
 proc_addtolist(struct proc* proc) {
-    for(int i = 0; i < INITIAL_PROC_LIST_SIZE; i++) {
-        if(proc_list[i] != NULL) {
+    for(int i = 2; i < INITIAL_PROC_LIST_SIZE; i++) {
+        if(proc_list[i] == NULL) {
             proc_list[i] = proc;
-            break;
+            proc->pid = i;
+            return;
         }
     }
+    panic("Number of processes exceeded %d\n", INITIAL_PROC_LIST_SIZE);
 }
 #endif
 

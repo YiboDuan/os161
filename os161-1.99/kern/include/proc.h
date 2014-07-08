@@ -70,7 +70,6 @@ struct proc {
   struct vnode *console;                /* a vnode for the console device */
 #endif
     struct cv *waitcv;
-    struct semaphore *fork_mutex;
     pid_t pid;
     pid_t parent_pid;
     int exitcode;
@@ -82,6 +81,7 @@ struct index_ll {
     struct index_ll *next;
 };
 
+extern struct semaphore *fork_synch;
 extern struct proc **proc_list;
 extern volatile int proc_list_end;
 /* This is the process structure for the kernel and for kernel-only threads. */

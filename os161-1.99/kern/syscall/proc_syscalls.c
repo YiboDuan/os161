@@ -122,11 +122,10 @@ sys_fork(struct trapframe *tf, pid_t *retval) {
     memcpy(ntf,tf,sizeof(struct trapframe*));
     
     void (*entry_func)(void*, unsigned long) = &child_entry;
-
     err = thread_fork("child thread", new_proc, entry_func, ntf, (unsigned long) nas);
     *retval = new_proc->pid;
-    P(curproc->fork_mutex);
-    
+    P(fork_synch);
+    kprintf("about to return from sys_fork\n");
     return 0;
 }
 
