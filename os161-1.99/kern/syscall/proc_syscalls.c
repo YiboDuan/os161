@@ -122,15 +122,12 @@ sys_fork(struct trapframe *tf, pid_t *retval) {
         kfree(pack->as);
         return ENOMEM;
     }
-    memcpy(pack->tf,tf,sizeof(struct trapframe*));
-    
-    
-    pack->sem = sem_create("fork sem", 1);
+    memcpy(pack->tf,tf,sizeof(struct trapframe*));    
+    pack->sem = sem_create("fork sem", 0);
     
     void (*entry_func)(void*, unsigned long) = &child_entry;
-    P(pack->sem);
     err = thread_fork("child thread", new_proc, entry_func, pack, 0);
-    V(pack->sem);
+    P(pack->sem);
     *retval = new_proc->pid;
     return 0;
 }
@@ -138,13 +135,11 @@ sys_fork(struct trapframe *tf, pid_t *retval) {
 void
 child_entry(void* arg1, unsigned long arg2) {
     struct fork_pack *pack = arg1;
-    P(pack->sem);
     (void)arg2;
     curproc->p_addrspace = pack->as;
     as_activate();
     struct trapframe ntf;
     memcpy(&ntf, pack->tf, sizeof(struct trapframe));
-    
     ntf.tf_v0 = 0;
     ntf.tf_a3 = 0;
     ntf.tf_epc += 4;
