@@ -138,8 +138,9 @@ child_entry(void* arg1, unsigned long arg2) {
     (void)arg2;
     curproc->p_addrspace = pack->as;
     as_activate();
-    struct trapframe ntf;
-    memcpy(&ntf, pack->tf, sizeof(struct trapframe));
+    struct trapframe *p_ntf = kmalloc(sizeof(struct trapframe*));
+    memcpy(p_ntf, pack->tf, sizeof(struct trapframe*));
+    struct trapframe ntf = *p_ntf;
     ntf.tf_v0 = 0;
     ntf.tf_a3 = 0;
     ntf.tf_epc += 4;
