@@ -103,35 +103,34 @@ sys_waitpid(pid_t pid,
 int
 sys_fork(struct trapframe *tf, pid_t *retval) {
     int err;
-    struct fork_pack pack;
-    
+    struct fork_pack *pack = kmalloc(sizeof(struct fork_pack *));
     //create new process
     struct proc *new_proc = proc_create_runprogram(curproc->p_name);
     new_proc->parent_pid = curproc->pid;
     
     // create and copy new address space
-    err = as_copy(curproc_getas(),&(pack.as));
+    err = as_copy(curproc_getas(),&(pack->as));
     if (err) {
         proc_destroy(new_proc);
         return err;
     }
     
     // create and copy new trap frame
-    pack.tf = kmalloc(sizeof(struct trapframe*));
-    if(pack.tf == NULL) {
+    pack->tf = kmalloc(sizeof(struct trapframe*));
+    if(pack->tf == NULL) {
         proc_destroy(new_proc);
-        kfree(pack.as);
+        kfree(pack->as);
         return ENOMEM;
     }
-    memcpy(pack.tf,tf,sizeof(struct trapframe*));
+    memcpy(pack->tf,tf,sizeof(struct trapframe*));
     
     
-    pack.sem = sem_create("fork sem", 1);
+    pack->sem = sem_create("fork sem", 1);
     
     void (*entry_func)(void*, unsigned long) = &child_entry;
-    P(pack.sem);
-    err = thread_fork("child thread", new_proc, entry_func, &pack, 0);
-    V(pack.sem);
+    P(pack->sem);
+    err = thread_fork("child thread", new_proc, entry_func, pack, 0);
+    V(pack->sem);
     *retval = new_proc->pid;
     return 0;
 }
