@@ -72,7 +72,7 @@ struct semaphore *no_proc_sem;
 #endif  // UW
 
 #if OPT_A2
-static struct semaphore *proc_list_mutex;
+struct semaphore *proc_list_mutex;
 struct proc **proc_list;
 struct semaphore *fork_synch;
 #endif
@@ -173,7 +173,6 @@ proc_destroy(struct proc *proc)
 	spinlock_cleanup(&proc->p_lock);
 	
 #if OPT_A2
-    kprintf("destruction");
     P(proc_list_mutex);
     if(proc->parent_pid == 1 || proc_list[proc->parent_pid]->exited){
         proc_list[proc->pid] = NULL;
@@ -185,6 +184,7 @@ proc_destroy(struct proc *proc)
         //cv_broadcast(proc->waitcv, NULL);
     }
     V(proc_list_mutex);
+    kprintf("proc destruction done");
 #else
     kfree(proc->p_name);
 	kfree(proc);

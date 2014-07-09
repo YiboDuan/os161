@@ -69,21 +69,24 @@ struct proc {
      it has opened, not just the console. */
   struct vnode *console;                /* a vnode for the console device */
 #endif
+#if OPT_A2
     struct cv *waitcv;
     pid_t pid;
     pid_t parent_pid;
     int exitcode;
     bool exited;
+#endif
 };
 
-struct index_ll {
-    int index;
-    struct index_ll *next;
-};
-
-extern struct semaphore *fork_synch;
+#if OPT_A2
 extern struct proc **proc_list;
-extern volatile int proc_list_end;
+
+struct fork_pack {
+    struct trapframe *tf;
+    struct addrspace *as;
+    struct semaphore *sem;
+};
+#endif
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;
 
@@ -98,8 +101,10 @@ void proc_bootstrap(void);
 /* Create a fresh process for use by runprogram(). */
 struct proc *proc_create_runprogram(const char *name);
 
+#if OPT_A2
 /* Add a process to the proc_list */
 void proc_addtolist(struct proc *proc);
+#endif
 
 /* Destroy a process. */
 void proc_destroy(struct proc *proc);
