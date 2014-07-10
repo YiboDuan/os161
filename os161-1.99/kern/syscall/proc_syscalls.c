@@ -22,14 +22,12 @@ extern struct proc **proc_list;
 struct fork_pack {
     struct trapframe *tf;
     struct addrspace *as;
-    struct lock *lock;
     struct semaphore *synch;
 };
 #endif
 
 
 void sys__exit(int exitcode) {
-
   struct addrspace *as;
   struct proc *p = curproc;
   /* for now, just include this to keep the compiler from complaining about
@@ -122,7 +120,7 @@ sys_fork(struct trapframe *tf, pid_t *retval) {
         proc_destroy(new_proc);
         return err;
     }
-    pack->synch = sem_create("fork synch", 0);
+    
     // create and copy new trap frame
     pack->tf = kmalloc(sizeof(struct trapframe*));
     if(pack->tf == NULL) {
@@ -130,23 +128,24 @@ sys_fork(struct trapframe *tf, pid_t *retval) {
         kfree(pack->as);
         return ENOMEM;
     }
-    memcpy(pack->tf,tf,sizeof(struct trapframe*));    
-    pack->lock = lock_create("fork lock");
+    memcpy(pack->tf,tf,sizeof(struct trapframe*));
+    
+    pack->synch = sem_create("fork synch", 1);
     
     void (*entry_func)(void*, unsigned long) = &child_entry;
-    lock_acquire(pack->lock);
-    err = thread_fork("child thread", new_proc, entry_func, pack, 0);
-    lock_release(pack->lock);
-    *retval = new_proc->pid;
-    spllower(IPL_HIGH, IPL_NONE);
+    
     P(pack->synch);
+    err = thread_fork("child thread", new_proc, entry_func, pack, 0);
+    V(pack->synch);
+    
+    *retval = new_proc->pid;
     return 0;
 }
 
 void
 child_entry(void* arg1, unsigned long arg2) {
     struct fork_pack *pack = arg1;
-    lock_acquire(pack->lock);
+    P(pack->synch);
     (void)arg2;
     curproc->p_addrspace = pack->as;
     as_activate();
@@ -158,8 +157,8 @@ child_entry(void* arg1, unsigned long arg2) {
     ntf.tf_a3 = 0;
     ntf.tf_epc += 4;
     
-    lock_release(pack->lock);
     V(pack->synch);
+    sem_destroy(pack->synch);
     mips_usermode(&ntf);
     panic("child thread escaped usermode warp!\n");
 }
