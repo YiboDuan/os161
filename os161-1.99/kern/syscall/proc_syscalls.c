@@ -18,12 +18,15 @@
   /* this needs to be fixed to get exit() and waitpid() working properly */
 #if OPT_A2
 extern struct proc **proc_list;
+//extern struct semaphore *fork_synch;
 
 struct fork_pack {
     struct trapframe *tf;
     struct addrspace *as;
     struct semaphore *synch;
 };
+
+
 #endif
 
 
@@ -106,59 +109,64 @@ sys_waitpid(pid_t pid,
 }
 #if OPT_A2
 
+
 int
 sys_fork(struct trapframe *tf, pid_t *retval) {
-    int err;
-    struct fork_pack *pack = kmalloc(sizeof(struct fork_pack *));
+    int err = 0;
+    struct fork_pack *pack = (struct fork_pack *)kmalloc(sizeof(struct fork_pack *));
     //create new process
     struct proc *new_proc = proc_create_runprogram(curproc->p_name);
     new_proc->parent_pid = curproc->pid;
     
     // create and copy new address space
-    err = as_copy(curproc_getas(),&(pack->as));
+    err = as_copy(curproc->p_addrspace,&(pack->as));
     if (err) {
         proc_destroy(new_proc);
         return err;
     }
     
     // create and copy new trap frame
-    pack->tf = kmalloc(sizeof(struct trapframe*));
+    pack->tf = (struct trapframe *)kmalloc(sizeof(struct trapframe*));
     if(pack->tf == NULL) {
         proc_destroy(new_proc);
         kfree(pack->as);
         return ENOMEM;
     }
-    memcpy(pack->tf,tf,sizeof(struct trapframe*));
+    memcpy(pack->tf, tf, sizeof(struct trapframe *));
     
     pack->synch = sem_create("fork synch", 1);
     
+    
     void (*entry_func)(void*, unsigned long) = &child_entry;
     
-    P(pack->synch);
+    //P(pack->synch);
     err = thread_fork("child thread", new_proc, entry_func, pack, 0);
-    V(pack->synch);
-    
+    //V(pack->synch);
+    P(pack->synch);
     *retval = new_proc->pid;
     return 0;
 }
 
 void
 child_entry(void* arg1, unsigned long arg2) {
-    struct fork_pack *pack = arg1;
-    P(pack->synch);
-    (void)arg2;
-    curproc->p_addrspace = pack->as;
-    as_activate();
-    struct trapframe *p_ntf = kmalloc(sizeof(struct trapframe*));
-    memcpy(p_ntf, pack->tf, sizeof(struct trapframe*));
-    struct trapframe ntf = *p_ntf;
+    int err = 0;
     
+    struct fork_pack *pack = arg1;
+    //P(pack->synch);
+    struct trapframe *p_ntf = pack->tf;
+    struct trapframe ntf;
+    struct addrspace *as;
+    (void)arg2;
+    
+    err = as_copy(pack->as, &(as));
+    curproc_setas(as);
+    as_activate();
+    
+    memcpy(&ntf, p_ntf, sizeof(struct trapframe));
     ntf.tf_v0 = 0;
     ntf.tf_a3 = 0;
     ntf.tf_epc += 4;
-    
     V(pack->synch);
-    sem_destroy(pack->synch);
     mips_usermode(&ntf);
     panic("child thread escaped usermode warp!\n");
 }
