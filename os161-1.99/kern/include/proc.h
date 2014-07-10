@@ -81,11 +81,7 @@ struct proc {
 #if OPT_A2
 extern struct proc **proc_list;
 
-struct fork_pack {
-    struct trapframe *tf;
-    struct addrspace *as;
-    struct semaphore *sem;
-};
+
 #endif
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;

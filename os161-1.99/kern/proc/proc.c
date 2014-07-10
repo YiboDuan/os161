@@ -74,7 +74,6 @@ struct semaphore *no_proc_sem;
 #if OPT_A2
 struct semaphore *proc_list_mutex;
 struct proc **proc_list;
-struct semaphore *fork_synch;
 #endif
 
 /*
@@ -236,7 +235,6 @@ proc_bootstrap(void)
     proc_list[1] = kproc;
     kproc->pid = 1;
     proc_list_mutex = sem_create("proc_list_mutex",1);
-    fork_synch = sem_create("fork synch", 0);
 #endif
 }
 
