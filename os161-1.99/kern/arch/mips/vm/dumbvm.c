@@ -37,6 +37,8 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <syscall.h>
+#include "opt-A3.h"
 
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
@@ -115,6 +117,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	uint32_t ehi, elo;
 	struct addrspace *as;
 	int spl;
+	int seg;	// describes the segment we're in
 
 	faultaddress &= PAGE_FRAME;
 
@@ -123,7 +126,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	switch (faulttype) {
 	    case VM_FAULT_READONLY:
 		/* We always create pages read-write, so we can't get this */
-		panic("dumbvm: got VM_FAULT_READONLY\n");
+			sys__exit(1);	// kill the process that is trying to write to code segment
 	    case VM_FAULT_READ:
 	    case VM_FAULT_WRITE:
 		break;
@@ -172,12 +175,15 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 
 	if (faultaddress >= vbase1 && faultaddress < vtop1) {
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
+		seg = 0;
 	}
 	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
 		paddr = (faultaddress - vbase2) + as->as_pbase2;
+		seg = 1;
 	}
 	else if (faultaddress >= stackbase && faultaddress < stacktop) {
 		paddr = (faultaddress - stackbase) + as->as_stackpbase;
+		seg = 2;
 	}
 	else {
 		return EFAULT;
@@ -195,16 +201,32 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 			continue;
 		}
 		ehi = faultaddress;
-		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		if(seg == 0 && !curproc->loaded) {
+			elo = paddr | TLBLO_VALID;
+		} else {
+			elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+		}
 		DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
 		tlb_write(ehi, elo, i);
 		splx(spl);
 		return 0;
 	}
-
+	#if OPT_A3
+	ehi = faultaddress;
+	if(seg == 0 && !curproc->loaded) {
+		elo = paddr | TLBLO_VALID;
+	} else {
+		elo = paddr | TLBLO_DIRTY | TLBLO_VALID;
+	}
+	DEBUG(DB_VM, "dumbvm: 0x%x -> 0x%x\n", faultaddress, paddr);
+	tlb_random(ehi, elo);
+	splx(spl);
+	return 0;
+	#else
 	kprintf("dumbvm: Ran out of TLB entries - cannot handle page fault\n");
 	splx(spl);
 	return EFAULT;
+	#endif
 }
 
 struct addrspace *

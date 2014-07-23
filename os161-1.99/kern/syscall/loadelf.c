@@ -85,6 +85,7 @@ load_segment(struct addrspace *as, struct vnode *v,
 	struct uio u;
 	int result;
 
+	curproc->loaded = true;
 	if (filesize > memsize) {
 		kprintf("ELF: warning: segment filesize > segment memsize\n");
 		filesize = memsize;
@@ -104,6 +105,7 @@ load_segment(struct addrspace *as, struct vnode *v,
 	u.uio_space = as;
 
 	result = VOP_READ(v, &u);
+	curproc->loaded = false;
 	if (result) {
 		return result;
 	}

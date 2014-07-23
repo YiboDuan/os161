@@ -18,6 +18,7 @@
   /* this needs to be fixed to get exit() and waitpid() working properly */
 #if OPT_A2
 extern struct proc **proc_list;
+extern struct semaphore *proc_list_mutex;
 //extern struct semaphore *fork_synch;
 
 struct fork_pack {
@@ -35,8 +36,18 @@ void sys__exit(int exitcode) {
   struct proc *p = curproc;
   /* for now, just include this to keep the compiler from complaining about
      an unused variable */
-  (void)exitcode;
-
+#if OPT_A2
+  p->exitcode = exitcode;
+  P(proc_list_mutex);
+    if(proc_list[p->parent_pid] != NULL) {
+        p->exited = true;
+        cv_signal(p->waitcv, NULL);
+    } else {
+        cv_destroy(p->waitcv);
+        proc_list[p->pid] = NULL;
+    }
+  V(proc_list_mutex);
+#endif
   DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
 
   KASSERT(curproc->p_addrspace != NULL);
@@ -71,7 +82,7 @@ sys_getpid(pid_t *retval)
 {
   /* for now, this is just a stub that always returns a PID of 1 */
   /* you need to fix this to make it work properly */
-  *retval = 1;
+  *retval = curproc->pid;
   return(0);
 }
 
@@ -113,7 +124,7 @@ sys_waitpid(pid_t pid,
 int
 sys_fork(struct trapframe *tf, pid_t *retval) {
     int err = 0;
-    struct fork_pack *pack = (struct fork_pack *)kmalloc(sizeof(struct fork_pack *));
+    struct fork_pack *pack = kmalloc(sizeof(struct fork_pack *));
     //create new process
     struct proc *new_proc = proc_create_runprogram(curproc->p_name);
     new_proc->parent_pid = curproc->pid;
@@ -134,39 +145,41 @@ sys_fork(struct trapframe *tf, pid_t *retval) {
     }
     memcpy(pack->tf, tf, sizeof(struct trapframe *));
     
-    pack->synch = sem_create("fork synch", 1);
+    //pack->synch = sem_create("synch", 0);
     
     
     void (*entry_func)(void*, unsigned long) = &child_entry;
     
     //P(pack->synch);
-    err = thread_fork("child thread", new_proc, entry_func, pack, 0);
     //V(pack->synch);
-    P(pack->synch);
+    err = thread_fork(curthread->t_name, new_proc, entry_func, pack, 0);
+    struct lock *dummy = lock_create("dummy lock");
+    lock_acquire(dummy);
+    cv_wait(fork_synch, dummy);
     *retval = new_proc->pid;
+    kprintf("WTF\n");
     return 0;
 }
 
 void
 child_entry(void* arg1, unsigned long arg2) {
-    int err = 0;
-    
+   
     struct fork_pack *pack = arg1;
     //P(pack->synch);
     struct trapframe *p_ntf = pack->tf;
     struct trapframe ntf;
-    struct addrspace *as;
+    //struct addrspace *as;
     (void)arg2;
-    
-    err = as_copy(pack->as, &(as));
-    curproc_setas(as);
+
+    curproc_setas(pack->as);
     as_activate();
     
     memcpy(&ntf, p_ntf, sizeof(struct trapframe));
     ntf.tf_v0 = 0;
     ntf.tf_a3 = 0;
     ntf.tf_epc += 4;
-    V(pack->synch);
+    cv_signal(fork_synch, NULL);
+    kprintf("LOL\n");
     mips_usermode(&ntf);
     panic("child thread escaped usermode warp!\n");
 }

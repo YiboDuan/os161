@@ -38,8 +38,10 @@
 
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
+#include "opt-A2.h"
+#include "opt-A3.h"
 
-#define INITIAL_PROC_LIST_SIZE 128
+#define INITIAL_PROC_LIST_SIZE 32
 
 struct addrspace;
 struct vnode;
@@ -69,8 +71,12 @@ struct proc {
      it has opened, not just the console. */
   struct vnode *console;                /* a vnode for the console device */
 #endif
+     #if OPT_A3
+     bool loaded;
+     #endif
 #if OPT_A2
     struct cv *waitcv;
+    struct lock *waitlock;
     pid_t pid;
     pid_t parent_pid;
     int exitcode;
@@ -81,8 +87,8 @@ struct proc {
 #if OPT_A2
 extern struct proc **proc_list;
 
-
 #endif
+extern struct cv *fork_synch;
 /* This is the process structure for the kernel and for kernel-only threads. */
 extern struct proc *kproc;
 

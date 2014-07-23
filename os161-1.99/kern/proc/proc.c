@@ -44,6 +44,7 @@
 
 
 #include "opt-A2.h"
+ #include "opt-A3.h"
 #include <types.h>
 #include <proc.h>
 #include <current.h>
@@ -74,6 +75,7 @@ struct semaphore *no_proc_sem;
 #if OPT_A2
 struct semaphore *proc_list_mutex;
 struct proc **proc_list;
+struct cv *fork_synch;
 #endif
 
 /*
@@ -183,7 +185,6 @@ proc_destroy(struct proc *proc)
         //cv_broadcast(proc->waitcv, NULL);
     }
     V(proc_list_mutex);
-    kprintf("proc destruction done");
 #else
     kfree(proc->p_name);
 	kfree(proc);
@@ -235,6 +236,10 @@ proc_bootstrap(void)
     proc_list[1] = kproc;
     kproc->pid = 1;
     proc_list_mutex = sem_create("proc_list_mutex",1);
+    fork_synch = cv_create("fork synch");
+#endif
+#if opt-A3
+    proc->loaded = false;
 #endif
 }
 
@@ -304,11 +309,14 @@ proc_create_runprogram(const char *name)
     proc->exitcode = -1;
     proc->exited = false;
     proc->waitcv = cv_create("wait cv");
+    proc->waitlock = lock_create("wait lock");
     P(proc_list_mutex);
     proc_addtolist(proc);
     V(proc_list_mutex);
+#endif
 
-    
+#if opt-A3
+    proc->loaded = false;
 #endif
     
 	return proc;
