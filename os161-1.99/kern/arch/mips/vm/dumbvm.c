@@ -55,10 +55,166 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+/*
+ * Coremap related stuff
+ */
+struct coremap_entry {
+	volatile bool valid;
+	volatile bool fixed;
+};
+
+static struct coremap_entry *coremap;
+static uint32_t coremap_num_entry;	// total number of entries
+static uint32_t coremap_num_free;		// number of free entries
+static uint32_t pframe_base_addr;	// where the page frame start
+
+
+#define FRAME_NUM_TO_PADDR(i)	((paddr_t)(pframe_base_addr + i * PAGE_SIZE))
+#define PADDR_TO_FRAME_NUM(paddr)	((paddr - pframe_base_addr) / PAGE_SIZE)
+
+static struct spinlock coremap_spinlock = SPINLOCK_INITIALIZER;
+
+
+int
+abs(int num) {
+	if(num >= 0) {
+		return num;
+	} else {
+		return num * (-1);
+	}
+}
+
+
+int
+roundUp(int num, int multiple) 
+{ 
+    if (multiple == 0) {
+        return num; 
+      }
+
+    int remainder = abs(num) % multiple;
+    if (remainder == 0) {
+        return num;
+    }
+    if (num < 0) {
+        return -(abs(num) - remainder);
+      }
+    return num + multiple - remainder;
+}
+
 void
 vm_bootstrap(void)
 {
-	/* Do nothing. */
+	paddr_t first = 0;
+	paddr_t last = 0;
+	ram_getsize(&first, &last);
+	// calculate number of pages possible
+	int32_t num_pages = (last - first) / PAGE_SIZE;
+	
+	// calculate coremap size
+	uint32_t coremap_size = num_pages * sizeof(struct coremap_entry);
+	// page align coremap
+	coremap_size = roundUp(coremap_size, PAGE_SIZE);
+	// allocate coremap
+	coremap = (struct coremap_entry*)PADDR_TO_KVADDR(first);
+
+	// move up firstaddr pointer
+	first = first + coremap_size;
+
+	uint32_t coremap_num_pages_used = coremap_size / PAGE_SIZE;
+	pframe_base_addr = first;
+
+	coremap_num_entry = (last - first) / PAGE_SIZE;
+	coremap_num_free = coremap_num_entry;
+
+	// initialize entries
+	for(uint32_t i = 0; i < coremap_num_entry; i++) {
+		coremap[i].valid = 0;
+		if(i < coremap_num_pages_used) {
+			coremap[i].fixed = 1;
+		} else {
+			coremap[i].fixed = 0;
+		}
+	}
+
+}
+
+static
+paddr_t
+coremap_page_replace(void) {
+	int32_t rand_page = (random() % coremap_num_entry);
+	return rand_page;
+}
+
+// static
+// paddr_t
+// coremap_alloc_single_page(void) {
+// 	paddr_t page = 0xdeadbeef;
+// 	bool iskern = (curproc->pid == 1) ? true : false;
+
+// 	spinlock_acquire(&coremap_spinlock);
+
+// 	if (coremap_num_free > 0) {
+
+// 		for (uint32_t i = 0; i < coremap_num_entry; i++) {
+// 			if (coremap[i].valid || coremap[i].fixed) {
+// 				continue;
+// 			}
+// 			page = i;
+// 			break;
+// 		}
+// 	}
+
+// 	if (page != 0xdeadbeef && curthread != NULL) {
+// 		page = coremap_page_replace();
+// 	}
+
+// 	coremap[page].valid = true;
+// 	if(iskern) {
+// 		coremap[page].fixed = true;
+// 	}
+// 	spinlock_release(&coremap_spinlock);
+// 	return FRAME_NUM_TO_PADDR(page);
+// }
+
+static
+paddr_t
+coremap_alloc_pages(int32_t npages) {
+	int32_t page = -1;
+	bool iskern = (curproc->pid == 1) ? true : false;
+	int32_t num_cont_pages = 0;
+	spinlock_acquire(&coremap_spinlock);
+
+	if (coremap_num_free > 0) {
+
+		for (uint32_t i = 0; i < coremap_num_entry; i++) {
+			if (coremap[i].valid || coremap[i].fixed) {
+				num_cont_pages = 0;
+				continue;
+			}
+			num_cont_pages++;
+			if(num_cont_pages == npages) {
+				page = i;
+				
+			} else {
+				continue;
+			}
+			break;
+		}
+	}
+
+	if (page < 0 && curthread != NULL) {
+		page = coremap_page_replace();
+	}
+
+	coremap[page].valid = true;
+	if(iskern) {
+		coremap[page].fixed = true;
+	}
+
+	spinlock_release(&coremap_spinlock);
+
+	return FRAME_NUM_TO_PADDR(page);
 }
 
 static
@@ -90,8 +246,15 @@ alloc_kpages(int npages)
 void 
 free_kpages(vaddr_t addr)
 {
-	/* nothing - leak the memory. */
+	// paddr_t paddr = KVADDR_TO_PADDR(addr);
 
+	// int32_t coremap_index = PADDR_TO_FRAME_NUM(paddr);
+
+	// spinlock_acquire(&coremap_spinlock);
+
+	// if(!coremap[coremap_index].fixed) {
+	// 	coremap[coremap_index].valid = 0;
+	// }
 	(void)addr;
 }
 
@@ -99,6 +262,7 @@ void
 vm_tlbshootdown_all(void)
 {
 	panic("dumbvm tried to do tlb shootdown?!\n");
+	coremap_alloc_pages(1);
 }
 
 void
@@ -245,6 +409,7 @@ as_create(void)
 	as->as_npages2 = 0;
 	as->as_stackpbase = 0;
 
+	as->as_page_table = NULL;
 	return as;
 }
 
@@ -336,6 +501,12 @@ as_prepare_load(struct addrspace *as)
 	KASSERT(as->as_pbase1 == 0);
 	KASSERT(as->as_pbase2 == 0);
 	KASSERT(as->as_stackpbase == 0);
+
+	as->as_page_table_size = as->as_npages1 + as->as_npages2 + DUMBVM_STACKPAGES;
+	as->as_page_table = kmalloc(as->as_page_table_size*sizeof(struct page_table_entry));
+	if (as->as_page_table == NULL) {
+		return ENOMEM;
+	}
 
 	as->as_pbase1 = getppages(as->as_npages1);
 	if (as->as_pbase1 == 0) {

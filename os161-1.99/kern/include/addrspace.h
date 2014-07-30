@@ -39,6 +39,10 @@
 
 struct vnode;
 
+struct page_table_entry {
+  paddr_t paddr;
+  bool preset;
+};
 
 /* 
  * Address space - data structure associated with the virtual memory
@@ -55,6 +59,9 @@ struct addrspace {
   paddr_t as_pbase2;
   size_t as_npages2;
   paddr_t as_stackpbase;
+
+  struct page_table_entry *as_page_table;
+  int32_t as_page_table_size;
 };
 
 /*
